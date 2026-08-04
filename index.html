@@ -4,12 +4,10 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Partitura no iPhone</title>
-    <!-- Configurações nativas para o iOS (iPhone) -->
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="default">
     <meta name="apple-mobile-web-app-title" content="Partitura IA">
     
-    <!-- Bibliotecas VexFlow -->
     <script src="https://cdn.jsdelivr.net/npm/vexflow@4.2.2/build/cjs/vexflow.js"></script>
 
     <style>
@@ -19,23 +17,24 @@
         h1 { font-size: 20px; text-align: center; color: #007aff; margin-bottom: 20px; }
         .box { background: #f8f8fc; border: 1px solid #e5e5ea; padding: 15px; border-radius: 12px; margin-bottom: 15px; }
         label { font-weight: 600; display: block; margin-bottom: 8px; font-size: 14px; }
-        input[type="file"], button { width: 100%; padding: 14px; margin-top: 5px; border-radius: 10px; border: 1px solid #c7c7cc; font-size: 16px; }
         
-        .paste-zone {
-            border: 2px dashed #007aff;
-            border-radius: 10px;
-            padding: 15px;
+        .upload-btn {
+            display: block;
             text-align: center;
             background: #eef6ff;
             color: #007aff;
-            font-size: 14px;
-            font-weight: 500;
-            margin-top: 10px;
+            border: 2px dashed #007aff;
+            padding: 16px;
+            border-radius: 12px;
+            font-weight: 600;
+            font-size: 15px;
             cursor: pointer;
+            margin-bottom: 10px;
         }
 
-        button { background: #007aff; color: white; border: none; font-weight: 600; cursor: pointer; transition: 0.2s; }
-        button:active { background: #0056b3; }
+        input[type="file"] { display: none; }
+
+        button { width: 100%; padding: 14px; margin-top: 5px; border-radius: 10px; border: none; font-size: 16px; background: #007aff; color: white; font-weight: 600; cursor: pointer; }
         button:disabled { background: #d1d1d6; color: #8e8e93; }
         #statusMsg { font-size: 13px; font-weight: 600; color: #007aff; margin-top: 10px; text-align: center; display: none; }
         #paper { background: #fff; border: 1px solid #e5e5ea; border-radius: 10px; margin-top: 10px; display: flex; justify-content: center; overflow-x: auto; min-height: 140px; }
@@ -48,14 +47,14 @@
     <h1>🎼 Conversor para iPhone</h1>
 
     <div class="box">
-        <label>1. Áudio (Arquivo ou Colar)</label>
-        <input type="file" id="audioInput" accept="audio/*">
+        <label>1. Carregar Áudio</label>
         
-        <div class="paste-zone" id="pasteZone">
-            📋 Toque longo e selecione <b>Colar</b> (ou pressione Ctrl+V) para enviar o áudio copiado
-        </div>
+        <label for="audioInput" class="upload-btn" id="uploadLabel">
+            📁 Toque aqui para escolher o Áudio ou Gravação
+        </label>
+        <input type="file" id="audioInput" accept="audio/*">
 
-        <audio id="audioPlayer" controls></audio>
+        <audio id="audioPlayer" controls style="display:none;"></audio>
         <button id="processAudioBtn" disabled>⚡ Processar no Celular</button>
         <div id="statusMsg">Analisando no processador do celular...</div>
     </div>
@@ -72,56 +71,28 @@
     const processAudioBtn = document.getElementById('processAudioBtn');
     const statusMsg = document.getElementById('statusMsg');
     const paper = document.getElementById('paper');
-    const pasteZone = document.getElementById('pasteZone');
+    const uploadLabel = document.getElementById('uploadLabel');
 
     let audioBuffer = null;
 
     async function loadAudioFile(file) {
-        if (!file || !file.type.startsWith('audio/')) {
-            alert("Por favor, selecione ou cole um arquivo de áudio válido!");
-            return;
-        }
+        if (!file) return;
+        
+        uploadLabel.innerText = `🎵 Arquivo: ${file.name || 'Áudio Selecionado'}`;
+        audioPlayer.style.display = 'block';
         audioPlayer.src = URL.createObjectURL(file);
+
         const arrayBuffer = await file.arrayBuffer();
         const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
         audioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
         processAudioBtn.disabled = false;
+        
         statusMsg.style.display = 'block';
-        statusMsg.innerText = `Áudio "${file.name || 'Copiado'}" carregado com sucesso!`;
+        statusMsg.innerText = "Áudio pronto para processar!";
     }
 
-    // Carregamento via seleção de arquivo
     audioInput.addEventListener('change', (e) => {
         if (e.target.files[0]) loadAudioFile(e.target.files[0]);
-    });
-
-    // Carregamento via Colar (Clipboard)
-    window.addEventListener('paste', async (e) => {
-        const items = (e.clipboardData || window.clipboardData).items;
-        for (let item of items) {
-            if (item.kind === 'file' && item.type.startsWith('audio/')) {
-                const file = item.getAsFile();
-                await loadAudioFile(file);
-                break;
-            }
-        }
-    });
-
-    pasteZone.addEventListener('click', async () => {
-        try {
-            const clipboardItems = await navigator.clipboard.read();
-            for (const item of clipboardItems) {
-                const audioType = item.types.find(t => t.startsWith('audio/'));
-                if (audioType) {
-                    const blob = await item.getType(audioType);
-                    await loadAudioFile(blob);
-                    return;
-                }
-            }
-            alert("Nenhum arquivo de áudio foi encontrado na área de transferência.");
-        } catch (err) {
-            alert("Dica: Use o atalho Ctrl+V ou faça toque longo no campo e selecione 'Colar'.");
-        }
     });
 
     processAudioBtn.addEventListener('click', async () => {
