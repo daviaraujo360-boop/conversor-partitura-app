@@ -3,14 +3,13 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Partitura com IA Rápida</title>
+    <title>Partitura no iPhone</title>
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="default">
+    <meta name="apple-mobile-web-app-title" content="Partitura IA">
     
-    <!-- Renderizador de Partitura -->
+    <!-- Apenas a biblioteca leve de renderização visual da partitura -->
     <script src="https://cdn.jsdelivr.net/npm/vexflow@4.2.2/build/cjs/vexflow.js"></script>
-    <!-- Engine de IA em JS (Basic Pitch / ONNX) -->
-    <script src="https://cdn.jsdelivr.net/npm/@spotify/basic-pitch@1.0.1/dist/index.post.js"></script>
 
     <style>
         * { box-sizing: border-box; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
@@ -46,7 +45,7 @@
 <body>
 
 <div class="container">
-    <h1>🎼 Conversor IA para iPhone</h1>
+    <h1>🎼 Conversor para iPhone</h1>
 
     <div class="box">
         <label>1. Áudio ou Gravação</label>
@@ -54,7 +53,7 @@
 
         <div class="btn-group">
             <button id="recordBtn" class="btn-record">🎙️ Gravar Voz</button>
-            <button id="processAudioBtn" class="btn-process" disabled>⚡ Processar IA</button>
+            <button id="processAudioBtn" class="btn-process" disabled>⚡ Processar</button>
         </div>
 
         <audio id="audioPlayer" controls style="display:none;"></audio>
@@ -89,7 +88,7 @@
 
     function getAudioContext() {
         if (!audioCtx) {
-            audioCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 22050 });
+            audioCtx = new (window.AudioContext || window.webkitAudioContext)();
         }
         if (audioCtx.state === 'suspended') {
             audioCtx.resume();
@@ -97,27 +96,36 @@
         return audioCtx;
     }
 
-    // Carregar via arquivo
-    audioInput.addEventListener('change', async (e) => {
+    // Leitura robusta de arquivo via FileReader para garantir funcionamento no iOS
+    audioInput.addEventListener('change', (e) => {
         const file = e.target.files[0];
         if (file) {
-            try {
-                const ctx = getAudioContext();
-                const arrayBuffer = await file.arrayBuffer();
-                audioBuffer = await ctx.decodeAudioData(arrayBuffer);
-                
-                audioPlayer.src = URL.createObjectURL(file);
-                audioPlayer.style.display = 'block';
-                processAudioBtn.disabled = false;
+            statusMsg.style.display = 'block';
+            statusMsg.style.color = '#007aff';
+            statusMsg.innerText = "Carregando arquivo...";
 
-                statusMsg.style.display = 'block';
-                statusMsg.style.color = '#34c759';
-                statusMsg.innerText = "Áudio pronto! Clique em Processar IA.";
-            } catch (err) {
-                statusMsg.style.display = 'block';
-                statusMsg.style.color = '#ff3b30';
-                statusMsg.innerText = "Formato não suportado. Tente outro arquivo.";
-            }
+            const reader = new FileReader();
+            reader.onload = async (event) => {
+                try {
+                    const ctx = getAudioContext();
+                    const arrayBuffer = event.target.result;
+                    
+                    audioBuffer = await ctx.decodeAudioData(arrayBuffer);
+                    
+                    audioPlayer.src = URL.createObjectURL(file);
+                    audioPlayer.style.display = 'block';
+                    processAudioBtn.disabled = false;
+
+                    statusMsg.style.color = '#34c759';
+                    statusMsg.innerText = "Áudio pronto! Clique em Processar.";
+                } catch (err) {
+                    console.error(err);
+                    statusMsg.style.color = '#ff3b30';
+                    statusMsg.innerText = "Erro ao decodificar áudio. Tente outro formato.";
+                }
+            };
+
+            reader.readAsArrayBuffer(file);
         }
     });
 
@@ -143,7 +151,9 @@
                     audioBuffer = await ctx.decodeAudioData(arrayBuffer);
 
                     processAudioBtn.disabled = false;
-                    statusMsg.innerText = "Gravação pronta! Clique em Processar IA.";
+                    statusMsg.style.display = 'block';
+                    statusMsg.style.color = '#34c759';
+                    statusMsg.innerText = "Gravação pronta! Clique em Processar.";
                 };
 
                 mediaRecorder.start();
@@ -163,85 +173,25 @@
         }
     });
 
-    // Processamento ultra-rápido via IA Local (Basic Pitch)
-    processAudioBtn.addEventListener('click', async () => {
+    // Processamento do áudio e detecção de notas
+    processAudioBtn.addEventListener('click', () => {
         if (!audioBuffer) return;
 
-        processAudioBtn.disabled = true;
         statusMsg.style.display = 'block';
         statusMsg.style.color = '#007aff';
-        statusMsg.innerText = "🤖 IA analisando frequências da música...";
+        statusMsg.innerText = "Analisando frequências...";
 
-        try {
-            // Executa transcrição neurônica no chip do dispositivo
-            const frames = [];
-            const onnxModel = "https://cdn.jsdelivr.net/npm/@spotify/basic-pitch@1.0.1/model/model.json";
-            
-            // Avalia notas da música
-            const notesData = await BasicPitch.evaluateModel(
-                audioBuffer,
-                onnxModel,
-                (pct) => {
-                    statusMsg.innerText = `🤖 IA analisando: ${Math.round(pct * 100)}%`;
-                }
-            );
-
-            const notes = BasicPitch.noteFramesToTime(notesData[0], notesData[1]);
-            
-            // Filtra e organiza as notas mais relevantes
-            currentDetectedNotes = notes
-                .filter(n => n.pitchMidi >= 48 && n.pitchMidi <= 84)
-                .slice(0, 12)
-                .map(n => n.pitchMidi);
-
-            if (currentDetectedNotes.length === 0) {
-                // Se a música for muito complexa ou suave, pega harmônicos principais
-                currentDetectedNotes = [60, 62, 64, 65, 67, 69, 71, 72];
-            }
-
+        setTimeout(() => {
+            currentDetectedNotes = detectNotesLocal(audioBuffer);
             renderScore(currentDetectedNotes);
 
             playPianoBtn.disabled = false;
             downloadBtn.disabled = false;
-            processAudioBtn.disabled = false;
 
             statusMsg.style.color = '#34c759';
-            statusMsg.innerText = "Partitura real gerada com sucesso!";
-        } catch (err) {
-            console.error(err);
-            // Fallback rápido caso falha no carregamento do modelo ONNX
-            currentDetectedNotes = fallbackDetection(audioBuffer);
-            renderScore(currentDetectedNotes);
-            
-            playPianoBtn.disabled = false;
-            downloadBtn.disabled = false;
-            processAudioBtn.disabled = false;
-            
-            statusMsg.style.color = '#34c759';
-            statusMsg.innerText = "Partitura gerada (Modo Rápido)!";
-        }
+            statusMsg.innerText = "Partitura gerada com sucesso!";
+        }, 100);
     });
-
-    // Fallback de detecção por filtros
-    function fallbackDetection(buffer) {
-        const data = buffer.getChannelData(0);
-        const sampleRate = buffer.sampleRate;
-        const chunkSize = 4096;
-        const midiList = [];
-
-        for (let i = 0; i < data.length; i += chunkSize * 2) {
-            const chunk = data.slice(i, i + chunkSize);
-            let sum = 0;
-            for (let j = 0; j < chunk.length; j++) sum += Math.abs(chunk[j]);
-            
-            if (sum / chunk.length > 0.03) {
-                const pitch = 220 + (i % 440);
-                const midi = Math.round(69 + 12 * Math.log2(pitch / 440));
-                if (midi >= 50 && midi <= 80) midiList.push(midi);
-            }
-        }
-        return midiList.slice(0, 8);
-    }
 
     // Tocar acompanhamento de Piano
     playPianoBtn.addEventListener('click', () => {
@@ -295,6 +245,53 @@
 
         img.src = "data:image/svg+xml;base64," + btoa(unescape(encodeURIComponent(svgData)));
     });
+
+    function detectNotesLocal(buffer) {
+        const data = buffer.getChannelData(0);
+        const sampleRate = buffer.sampleRate;
+        const chunkSize = 4096;
+        const detectedMidi = [];
+
+        for (let i = 0; i < data.length; i += chunkSize) {
+            const chunk = data.slice(i, i + chunkSize);
+            const pitch = autoCorrelate(chunk, sampleRate);
+            if (pitch !== -1) {
+                const midi = Math.round(69 + 12 * Math.log2(pitch / 440));
+                if (midi >= 48 && midi <= 84) {
+                    detectedMidi.push(midi);
+                }
+            }
+        }
+        return detectedMidi.slice(0, 8);
+    }
+
+    function autoCorrelate(buf, sampleRate) {
+        let SIZE = buf.length;
+        let rms = 0;
+        for (let i = 0; i < SIZE; i++) rms += buf[i] * buf[i];
+        rms = Math.sqrt(rms / SIZE);
+        if (rms < 0.02) return -1;
+
+        let r1 = 0, r2 = SIZE - 1, thres = 0.2;
+        for (let i = 0; i < SIZE / 2; i++) if (Math.abs(buf[i]) < thres) { r1 = i; break; }
+        for (let i = 1; i < SIZE / 2; i++) if (Math.abs(buf[SIZE - i]) < thres) { r2 = SIZE - i; break; }
+
+        buf = buf.slice(r1, r2);
+        SIZE = buf.length;
+
+        let c = new Array(SIZE).fill(0);
+        for (let i = 0; i < SIZE; i++)
+            for (let j = 0; j < SIZE - i; j++)
+                c[i] = c[i] + buf[j] * buf[j + i];
+
+        let d = 0; while (c[d] > c[d + 1]) d++;
+        let maxval = -1, maxpos = -1;
+        for (let i = d; i < SIZE; i++) {
+            if (c[i] > maxval) { maxval = c[i]; maxpos = i; }
+        }
+        let T0 = maxpos;
+        return sampleRate / T0;
+    }
 
     function renderScore(midiNotes) {
         paper.innerHTML = '';
