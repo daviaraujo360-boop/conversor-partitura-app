@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Acompanhamento de Piano em Tempo Real</title>
+    <title>Piano Acompanhante com Download</title>
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="default">
     
@@ -14,22 +14,23 @@
         h1 { font-size: 22px; margin-bottom: 8px; color: #0a84ff; }
         p { font-size: 14px; color: #8e8e93; margin-bottom: 25px; }
         
-        .note-display { background: #1c1c1e; border: 2px solid #0a84ff; border-radius: 16px; padding: 20px; margin-bottom: 25px; }
+        .note-display { background: #1c1c1e; border: 2px solid #0a84ff; border-radius: 16px; padding: 20px; margin-bottom: 20px; }
         .note-name { font-size: 56px; font-weight: bold; color: #30d158; }
         .frequency { font-size: 16px; color: #8e8e93; margin-top: 5px; }
         
-        button { width: 100%; padding: 18px; border-radius: 14px; border: none; font-size: 18px; font-weight: bold; cursor: pointer; transition: all 0.2s ease; }
+        button { width: 100%; padding: 18px; border-radius: 14px; border: none; font-size: 16px; font-weight: bold; cursor: pointer; transition: all 0.2s ease; margin-bottom: 12px; }
         .btn-start { background: #30d158; color: #000000; }
         .btn-stop { background: #ff453a; color: #ffffff; }
+        .btn-download { background: #0a84ff; color: #ffffff; display: none; }
         
-        .status { margin-top: 15px; font-size: 13px; color: #8e8e93; }
+        .status { margin-top: 10px; font-size: 13px; color: #8e8e93; }
     </style>
 </head>
 <body>
 
 <div class="card">
     <h1>🎹 Piano Acompanhante</h1>
-    <p>Cante no microfone e o piano tocará junto com a sua voz em tempo real.</p>
+    <p>Cante no microfone: o piano acompanha sua voz e você pode baixar o resultado.</p>
 
     <div class="note-display">
         <div id="noteName" class="note-name">--</div>
@@ -37,11 +38,14 @@
     </div>
 
     <button id="toggleBtn" class="btn-start">🎙️ Iniciar Acompanhamento</button>
+    <button id="downloadBtn" class="btn-download">⬇️ Baixar Áudio Mixado</button>
+    
     <div id="statusText" class="status">Pronto para iniciar.</div>
 </div>
 
 <script>
     const toggleBtn = document.getElementById('toggleBtn');
+    const downloadBtn = document.getElementById('downloadBtn');
     const noteNameEl = document.getElementById('noteName');
     const freqDisplayEl = document.getElementById('freqDisplay');
     const statusTextEl = document.getElementById('statusText');
@@ -56,6 +60,12 @@
     let oscillator = null;
     let gainNode = null;
 
+    // Gravação e Mixagem
+    let mediaRecorder = null;
+    let audioChunks = [];
+    let audioBlob = null;
+    let masterDestination = null;
+
     const noteNames = ["Dó", "Dó#", "Ré", "Ré#", "Mi", "Fá", "Fá#", "Sol", "Sol#", "Lá", "Lá#", "Si"];
 
     function initAudio() {
@@ -68,15 +78,16 @@
     }
 
     function createPianoSound() {
-        // Oscilador de onda suave simulando um timbre de piano/órgão leve
         oscillator = audioCtx.createOscillator();
         gainNode = audioCtx.createGain();
 
         oscillator.type = 'triangle';
         gainNode.gain.setValueAtTime(0, audioCtx.currentTime);
 
+        // Conecta o piano na saída de áudio e no gravador
         oscillator.connect(gainNode);
         gainNode.connect(audioCtx.destination);
+        if (masterDestination) gainNode.connect(masterDestination);
 
         oscillator.start();
     }
@@ -85,6 +96,8 @@
         if (!isRunning) {
             try {
                 initAudio();
+                downloadBtn.style.display = "none";
+                audioChunks = [];
                 
                 const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
                 microphone = audioCtx.createMediaStreamSource(stream);
@@ -93,12 +106,32 @@
                 
                 microphone.connect(analyser);
 
+                // Nó de destino para gravar a voz + piano juntos
+                masterDestination = audioCtx.createMediaStreamDestination();
+                microphone.connect(masterDestination);
+
                 createPianoSound();
 
+                // Inicializa o Gravador do Navegador
+                let mimeType = MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm' : 'audio/mp4';
+                mediaRecorder = new MediaRecorder(masterDestination.stream, { mimeType });
+
+                mediaRecorder.ondataavailable = event => {
+                    if (event.data.size > 0) audioChunks.push(event.data);
+                };
+
+                mediaRecorder.onstop = () => {
+                    audioBlob = new Blob(audioChunks, { type: mimeType });
+                    downloadBtn.style.display = "block";
+                    statusTextEl.innerText = "Gravação concluída! Clique abaixo para baixar.";
+                };
+
+                mediaRecorder.start();
+
                 isRunning = true;
-                toggleBtn.innerText = "⏹️ Parar Acompanhamento";
+                toggleBtn.innerText = "⏹️ Parar e Gerar Áudio";
                 toggleBtn.className = "btn-stop";
-                statusTextEl.innerText = "Ouvindo sua voz...";
+                statusTextEl.innerText = "Gravando voz e piano...";
 
                 detectPitch();
             } catch (err) {
@@ -114,6 +147,10 @@
         isRunning = false;
         if (animationId) cancelAnimationFrame(animationId);
         
+        if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+            mediaRecorder.stop();
+        }
+
         if (oscillator) {
             oscillator.stop();
             oscillator.disconnect();
@@ -123,12 +160,32 @@
             microphone.mediaStream.getTracks().forEach(track => track.stop());
         }
 
-        toggleBtn.innerText = "🎙️ Iniciar Acompanhamento";
+        toggleBtn.innerText = "🎙️ Iniciar Nova Gravação";
         toggleBtn.className = "btn-start";
-        statusTextEl.innerText = "Acompanhamento parado.";
         noteNameEl.innerText = "--";
         freqDisplayEl.innerText = "0.0 Hz";
     }
+
+    downloadBtn.addEventListener('click', () => {
+        if (!audioBlob) return;
+        
+        const url = URL.createObjectURL(audioBlob);
+        const a = document.createElement('a');
+        a.style.display = 'none';
+        a.href = url;
+        
+        // Formato compatível com iOS e Android
+        const ext = audioBlob.type.includes('webm') ? 'webm' : 'm4a';
+        a.download = `meu-acompanhamento.${ext}`;
+        
+        document.body.appendChild(a);
+        a.click();
+        
+        setTimeout(() => {
+            document.body.removeChild(a);
+            window.URL.revokeObjectURL(url);
+        }, 100);
+    });
 
     function detectPitch() {
         const buffer = new Float32Array(analyser.fftSize);
@@ -137,7 +194,6 @@
         const pitch = autoCorrelate(buffer, audioCtx.sampleRate);
 
         if (pitch !== -1 && pitch >= 65 && pitch <= 1000) {
-            // Converte a frequência em nota MIDI
             const midiNote = Math.round(69 + 12 * Math.log2(pitch / 440));
             const noteIndex = (midiNote % 12 + 12) % 12;
             const octave = Math.floor(midiNote / 12) - 1;
@@ -145,13 +201,9 @@
             noteNameEl.innerText = `${noteNames[noteIndex]}${octave}`;
             freqDisplayEl.innerText = `${pitch.toFixed(1)} Hz`;
 
-            // Ajusta a frequência do piano instantaneamente com a voz
             oscillator.frequency.setTargetAtTime(pitch, audioCtx.currentTime, 0.03);
-            
-            // Suaviza o volume conforme a voz canta
-            gainNode.gain.setTargetAtTime(0.2, audioCtx.currentTime, 0.05);
+            gainNode.gain.setTargetAtTime(0.25, audioCtx.currentTime, 0.05);
         } else {
-            // Silencia o piano suavemente se você parar de cantar
             if (gainNode) {
                 gainNode.gain.setTargetAtTime(0, audioCtx.currentTime, 0.1);
             }
@@ -162,7 +214,6 @@
         }
     }
 
-    // Algoritmo rápido de detecção de tom no tempo real
     function autoCorrelate(buf, sampleRate) {
         let SIZE = buf.length;
         let rms = 0;
@@ -173,7 +224,6 @@
         }
         rms = Math.sqrt(rms / SIZE);
 
-        // Se o volume da voz for muito baixo, ignora ruídos de fundo
         if (rms < 0.015) return -1;
 
         let r1 = 0, r2 = SIZE - 1, thres = 0.2;
