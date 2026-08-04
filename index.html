@@ -6,7 +6,6 @@
     <title>Partitura no iPhone</title>
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="default">
-    <meta name="apple-mobile-web-app-title" content="Partitura IA">
     
     <script src="https://cdn.jsdelivr.net/npm/vexflow@4.2.2/build/cjs/vexflow.js"></script>
 
@@ -18,19 +17,24 @@
         .box { background: #f8f8fc; border: 1px solid #e5e5ea; padding: 15px; border-radius: 12px; margin-bottom: 15px; }
         label { font-weight: 600; display: block; margin-bottom: 8px; font-size: 14px; }
         
-        /* Botão nativo visível para compatibilidade total com iOS */
         input[type="file"] {
             width: 100%;
             padding: 12px;
             background: #ffffff;
             border: 1px solid #c7c7cc;
             border-radius: 10px;
-            font-size: 15px;
+            font-size: 14px;
             margin-bottom: 10px;
         }
 
-        button { width: 100%; padding: 14px; margin-top: 10px; border-radius: 10px; border: none; font-size: 16px; background: #34c759; color: white; font-weight: 600; cursor: pointer; }
+        .btn-group { display: flex; gap: 8px; margin-top: 5px; }
+        button { flex: 1; padding: 14px; border-radius: 10px; border: none; font-size: 15px; font-weight: 600; cursor: pointer; }
+        .btn-record { background: #ff3b30; color: white; }
+        .btn-process { background: #34c759; color: white; }
+        .btn-piano { background: #5856d6; color: white; margin-top: 10px; width: 100%; }
+        .btn-download { background: #007aff; color: white; margin-top: 8px; width: 100%; }
         button:disabled { background: #d1d1d6; color: #8e8e93; }
+        
         #statusMsg { font-size: 13px; font-weight: 600; color: #007aff; margin-top: 12px; text-align: center; display: none; word-break: break-word; }
         #paper { background: #fff; border: 1px solid #e5e5ea; border-radius: 10px; margin-top: 10px; display: flex; justify-content: center; overflow-x: auto; min-height: 140px; }
         audio { width: 100%; margin-top: 10px; }
@@ -42,87 +46,192 @@
     <h1>🎼 Conversor para iPhone</h1>
 
     <div class="box">
-        <label for="audioInput">1. Selecionar Áudio</label>
-        
-        <!-- Input visível diretamente na página -->
+        <label>1. Áudio ou Gravação</label>
         <input type="file" id="audioInput">
 
+        <div class="btn-group">
+            <button id="recordBtn" class="btn-record">🎙️ Gravar Voz</button>
+            <button id="processAudioBtn" class="btn-process" disabled>⚡ Processar</button>
+        </div>
+
         <audio id="audioPlayer" controls style="display:none;"></audio>
-        <button id="processAudioBtn" disabled>⚡ Processar Áudio</button>
         <div id="statusMsg"></div>
     </div>
 
     <div class="box">
-        <label>2. Partitura Gerada</label>
+        <label>2. Partitura Gerada & Acompanhamento</label>
         <div id="paper"></div>
+        
+        <button id="playPianoBtn" class="btn-piano" disabled>🎹 Tocar Acompanhamento (Piano)</button>
+        <button id="downloadBtn" class="btn-download" disabled>💾 Baixar Partitura (PNG)</button>
     </div>
 </div>
 
 <script>
     const audioInput = document.getElementById('audioInput');
     const audioPlayer = document.getElementById('audioPlayer');
+    const recordBtn = document.getElementById('recordBtn');
     const processAudioBtn = document.getElementById('processAudioBtn');
+    const playPianoBtn = document.getElementById('playPianoBtn');
+    const downloadBtn = document.getElementById('downloadBtn');
     const statusMsg = document.getElementById('statusMsg');
     const paper = document.getElementById('paper');
 
-    let selectedFile = null;
+    let selectedBuffer = null;
     let audioCtx = null;
+    let mediaRecorder = null;
+    let recordedChunks = [];
+    let isRecording = false;
+    let currentDetectedNotes = [];
 
-    audioInput.addEventListener('change', (e) => {
+    function getAudioContext() {
+        if (!audioCtx) {
+            audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        }
+        if (audioCtx.state === 'suspended') {
+            audioCtx.resume();
+        }
+        return audioCtx;
+    }
+
+    // Carregar via arquivo
+    audioInput.addEventListener('change', async (e) => {
         const file = e.target.files[0];
         if (file) {
-            selectedFile = file;
-            
-            const blobUrl = URL.createObjectURL(file);
-            audioPlayer.src = blobUrl;
-            audioPlayer.style.display = 'block';
-            
-            processAudioBtn.disabled = false;
-            statusMsg.style.display = 'block';
-            statusMsg.style.color = '#34c759';
-            statusMsg.innerText = "Áudio selecionado! Clique em Processar Áudio.";
+            try {
+                const ctx = getAudioContext();
+                const arrayBuffer = await file.arrayBuffer();
+                selectedBuffer = await ctx.decodeAudioData(arrayBuffer);
+                
+                audioPlayer.src = URL.createObjectURL(file);
+                audioPlayer.style.display = 'block';
+                processAudioBtn.disabled = false;
+
+                statusMsg.style.display = 'block';
+                statusMsg.style.color = '#34c759';
+                statusMsg.innerText = "Áudio pronto! Clique em Processar.";
+            } catch (err) {
+                statusMsg.style.display = 'block';
+                statusMsg.style.color = '#ff3b30';
+                statusMsg.innerText = "Não foi possível ler este formato de arquivo.";
+            }
         }
     });
 
-    processAudioBtn.addEventListener('click', async () => {
-        if (!selectedFile) return;
+    // Gravar direto do microfone
+    recordBtn.addEventListener('click', async () => {
+        if (!isRecording) {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                mediaRecorder = new MediaRecorder(stream);
+                recordedChunks = [];
 
-        processAudioBtn.disabled = true;
-        statusMsg.style.display = 'block';
-        statusMsg.style.color = '#007aff';
-        statusMsg.innerText = "Lendo arquivo de áudio...";
+                mediaRecorder.ondataavailable = (e) => {
+                    if (e.data.size > 0) recordedChunks.push(e.data);
+                };
 
-        try {
-            if (!audioCtx) {
-                audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-            }
-            if (audioCtx.state === 'suspended') {
-                await audioCtx.resume();
-            }
+                mediaRecorder.onstop = async () => {
+                    const blob = new Blob(recordedChunks, { type: 'audio/wav' });
+                    audioPlayer.src = URL.createObjectURL(blob);
+                    audioPlayer.style.display = 'block';
 
-            const arrayBuffer = await selectedFile.arrayBuffer();
-            
-            statusMsg.innerText = "Decodificando frequências no iPhone...";
+                    const ctx = getAudioContext();
+                    const arrayBuffer = await blob.arrayBuffer();
+                    selectedBuffer = await ctx.decodeAudioData(arrayBuffer);
 
-            audioCtx.decodeAudioData(arrayBuffer, (buffer) => {
-                const notes = detectNotesLocal(buffer);
-                renderScore(notes);
-                statusMsg.style.color = '#34c759';
-                statusMsg.innerText = "Partitura gerada com sucesso!";
-                processAudioBtn.disabled = false;
-            }, (err) => {
-                console.error(err);
+                    processAudioBtn.disabled = false;
+                    statusMsg.innerText = "Gravação concluída! Clique em Processar.";
+                };
+
+                mediaRecorder.start();
+                isRecording = true;
+                recordBtn.innerText = "⏹️ Parar";
+                statusMsg.style.display = 'block';
                 statusMsg.style.color = '#ff3b30';
-                statusMsg.innerText = "Formato de áudio não suportado. Tente outro arquivo.";
-                processAudioBtn.disabled = false;
-            });
-
-        } catch (err) {
-            console.error(err);
-            statusMsg.style.color = '#ff3b30';
-            statusMsg.innerText = "Erro ao acessar o arquivo selecionado.";
-            processAudioBtn.disabled = false;
+                statusMsg.innerText = "Gravando áudio...";
+            } catch (err) {
+                alert("Permissão para usar o microfone foi negada.");
+            }
+        } else {
+            mediaRecorder.stop();
+            isRecording = false;
+            recordBtn.innerText = "🎙️ Gravar Voz";
+            statusMsg.style.color = '#34c759';
         }
+    });
+
+    // Processar partitura
+    processAudioBtn.addEventListener('click', () => {
+        if (!selectedBuffer) return;
+
+        statusMsg.style.color = '#007aff';
+        statusMsg.innerText = "Desenhando partitura...";
+
+        setTimeout(() => {
+            currentDetectedNotes = detectNotesLocal(selectedBuffer);
+            renderScore(currentDetectedNotes);
+            
+            playPianoBtn.disabled = false;
+            downloadBtn.disabled = false;
+            
+            statusMsg.style.color = '#34c759';
+            statusMsg.innerText = "Partitura gerada com sucesso!";
+        }, 100);
+    });
+
+    // Tocar acompanhamento de Piano (Síntese Sonora de Piano)
+    playPianoBtn.addEventListener('click', () => {
+        if (!currentDetectedNotes.length) return;
+        const ctx = getAudioContext();
+        let now = ctx.currentTime;
+
+        currentDetectedNotes.forEach((midiNote, index) => {
+            const freq = 440 * Math.pow(2, (midiNote - 69) / 12);
+            
+            // Gerador de tom estilo piano
+            const osc = ctx.createOscillator();
+            const gain = ctx.createGain();
+
+            osc.type = 'triangle'; // Timbre suave
+            osc.frequency.setValueAtTime(freq, now + (index * 0.5));
+
+            // Envelope de ataque e decaimento de piano
+            gain.gain.setValueAtTime(0.001, now + (index * 0.5));
+            gain.gain.exponentialRampToValueAtTime(0.3, now + (index * 0.5) + 0.05);
+            gain.gain.exponentialRampToValueAtTime(0.001, now + (index * 0.5) + 0.45);
+
+            osc.connect(gain);
+            gain.connect(ctx.destination);
+
+            osc.start(now + (index * 0.5));
+            osc.stop(now + (index * 0.5) + 0.5);
+        });
+    });
+
+    // Baixar Partitura em PNG no iPhone
+    downloadBtn.addEventListener('click', () => {
+        const svgElement = paper.querySelector('svg');
+        if (!svgElement) return;
+
+        const svgData = new XMLSerializer().serializeToString(svgElement);
+        const canvas = document.createElement("canvas");
+        const ctx = canvas.getContext("2d");
+        const img = new Image();
+
+        img.onload = () => {
+            canvas.width = img.width;
+            canvas.height = img.height;
+            ctx.fillStyle = "#ffffff";
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            ctx.drawImage(img, 0, 0);
+
+            const a = document.createElement("a");
+            a.download = "partitura-gerada.png";
+            a.href = canvas.toDataURL("image/png");
+            a.click();
+        };
+
+        img.src = "data:image/svg+xml;base64," + btoa(unescape(encodeURIComponent(svgData)));
     });
 
     function detectNotesLocal(buffer) {
