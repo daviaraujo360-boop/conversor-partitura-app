@@ -18,22 +18,16 @@
         .box { background: #f8f8fc; border: 1px solid #e5e5ea; padding: 15px; border-radius: 12px; margin-bottom: 15px; }
         label { font-weight: 600; display: block; margin-bottom: 8px; font-size: 14px; }
         
-        .upload-btn {
-            display: block;
-            text-align: center;
-            background: #007aff;
-            color: #ffffff;
-            padding: 16px;
-            border-radius: 12px;
-            font-weight: 600;
-            font-size: 16px;
-            cursor: pointer;
+        /* Botão nativo visível para compatibilidade total com iOS */
+        input[type="file"] {
+            width: 100%;
+            padding: 12px;
+            background: #ffffff;
+            border: 1px solid #c7c7cc;
+            border-radius: 10px;
+            font-size: 15px;
             margin-bottom: 10px;
-            box-shadow: 0 2px 8px rgba(0,122,255,0.25);
         }
-
-        /* Libera todos os tipos de arquivo para o iOS não bloquear */
-        input[type="file"] { display: none; }
 
         button { width: 100%; padding: 14px; margin-top: 10px; border-radius: 10px; border: none; font-size: 16px; background: #34c759; color: white; font-weight: 600; cursor: pointer; }
         button:disabled { background: #d1d1d6; color: #8e8e93; }
@@ -48,12 +42,9 @@
     <h1>🎼 Conversor para iPhone</h1>
 
     <div class="box">
-        <label>1. Carregar Áudio</label>
+        <label for="audioInput">1. Selecionar Áudio</label>
         
-        <!-- Botão com suporte universal para o iOS -->
-        <label for="audioInput" class="upload-btn" id="uploadLabel">
-            📁 Escolher Arquivo no iPhone
-        </label>
+        <!-- Input visível diretamente na página -->
         <input type="file" id="audioInput">
 
         <audio id="audioPlayer" controls style="display:none;"></audio>
@@ -73,7 +64,6 @@
     const processAudioBtn = document.getElementById('processAudioBtn');
     const statusMsg = document.getElementById('statusMsg');
     const paper = document.getElementById('paper');
-    const uploadLabel = document.getElementById('uploadLabel');
 
     let selectedFile = null;
     let audioCtx = null;
@@ -82,9 +72,7 @@
         const file = e.target.files[0];
         if (file) {
             selectedFile = file;
-            uploadLabel.innerText = `✅ ${file.name.substring(0, 25)}...`;
             
-            // Carrega o tocador nativo
             const blobUrl = URL.createObjectURL(file);
             audioPlayer.src = blobUrl;
             audioPlayer.style.display = 'block';
@@ -92,11 +80,7 @@
             processAudioBtn.disabled = false;
             statusMsg.style.display = 'block';
             statusMsg.style.color = '#34c759';
-            statusMsg.innerText = "Áudio carregado com sucesso! Clique em Processar.";
-        } else {
-            statusMsg.style.display = 'block';
-            statusMsg.style.color = '#ff3b30';
-            statusMsg.innerText = "Nenhum arquivo foi selecionado.";
+            statusMsg.innerText = "Áudio selecionado! Clique em Processar Áudio.";
         }
     });
 
@@ -129,7 +113,7 @@
             }, (err) => {
                 console.error(err);
                 statusMsg.style.color = '#ff3b30';
-                statusMsg.innerText = "Formato de áudio incompatível. Tente um arquivo .mp3 ou .wav.";
+                statusMsg.innerText = "Formato de áudio não suportado. Tente outro arquivo.";
                 processAudioBtn.disabled = false;
             });
 
