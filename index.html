@@ -3,180 +3,204 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Piano Acompanhante com Download</title>
-    <meta name="apple-mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-status-bar-style" content="default">
-    
+    <title>Acompanhamento de Piano por Áudio</title>
     <style>
         * { box-sizing: border-box; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
         body { background: #1c1c1e; color: #ffffff; margin: 0; padding: 20px; display: flex; justify-content: center; align-items: center; min-height: 100vh; }
-        .card { background: #2c2c2e; padding: 30px 20px; border-radius: 20px; width: 100%; max-width: 400px; text-align: center; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
+        .card { background: #2c2c2e; padding: 30px 20px; border-radius: 20px; width: 100%; max-width: 440px; text-align: center; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
         h1 { font-size: 22px; margin-bottom: 8px; color: #0a84ff; }
         p { font-size: 14px; color: #8e8e93; margin-bottom: 25px; }
         
-        .note-display { background: #1c1c1e; border: 2px solid #0a84ff; border-radius: 16px; padding: 20px; margin-bottom: 20px; }
-        .note-name { font-size: 56px; font-weight: bold; color: #30d158; }
-        .frequency { font-size: 16px; color: #8e8e93; margin-top: 5px; }
+        .upload-area { border: 2px dashed #0a84ff; border-radius: 16px; padding: 25px 15px; margin-bottom: 20px; background: #1c1c1e; cursor: pointer; }
+        .upload-area input { display: none; }
+        .upload-label { font-size: 15px; color: #0a84ff; font-weight: bold; cursor: pointer; }
         
+        .mode-select { margin-bottom: 20px; text-align: left; }
+        .mode-select label { font-size: 13px; color: #8e8e93; display: block; margin-bottom: 6px; }
+        select { width: 100%; padding: 12px; border-radius: 10px; background: #3a3a3c; border: none; color: white; font-size: 15px; }
+
+        .progress-box { background: #1c1c1e; border-radius: 12px; padding: 15px; margin-bottom: 20px; display: none; }
+        .progress-bar { background: #3a3a3c; height: 10px; border-radius: 5px; overflow: hidden; margin-top: 8px; }
+        .progress-fill { background: #30d158; height: 100%; width: 0%; transition: width 0.1s linear; }
+
         button { width: 100%; padding: 18px; border-radius: 14px; border: none; font-size: 16px; font-weight: bold; cursor: pointer; transition: all 0.2s ease; margin-bottom: 12px; }
-        .btn-start { background: #30d158; color: #000000; }
-        .btn-stop { background: #ff453a; color: #ffffff; }
+        .btn-process { background: #30d158; color: #000000; }
+        .btn-process:disabled { background: #3a3a3c; color: #8e8e93; cursor: not-allowed; }
         .btn-download { background: #0a84ff; color: #ffffff; display: none; }
         
-        .status { margin-top: 10px; font-size: 13px; color: #8e8e93; }
+        .status { font-size: 13px; color: #8e8e93; }
     </style>
 </head>
 <body>
 
 <div class="card">
-    <h1>🎹 Piano Acompanhante</h1>
-    <p>Cante no microfone: o piano acompanha sua voz e você pode baixar o resultado.</p>
+    <h1>🎹 Harmonizador de Piano</h1>
+    <p>Envie sua música/voz gravada para gerar o acompanhamento de piano e baixar o resultado.</p>
 
-    <div class="note-display">
-        <div id="noteName" class="note-name">--</div>
-        <div id="freqDisplay" class="frequency">0.0 Hz</div>
+    <div class="upload-area" onclick="document.getElementById('audioFile').click()">
+        <input type="file" id="audioFile" accept="audio/*">
+        <div id="fileLabel" class="upload-label">📁 Clique para selecionar o áudio</div>
     </div>
 
-    <button id="toggleBtn" class="btn-start">🎙️ Iniciar Acompanhamento</button>
-    <button id="downloadBtn" class="btn-download">⬇️ Baixar Áudio Mixado</button>
+    <div class="mode-select">
+        <label for="harmonyMode">Modo de Acompanhamento:</label>
+        <select id="harmonyMode">
+            <option value="chord">🎹 Acordes Harmônicos (Triades Completas)</option>
+            <option value="melody">🎵 Seguir Melodia (Linha Única Afinada)</option>
+        </select>
+    </div>
+
+    <button id="processBtn" class="btn-process" disabled>▶️ Processar Áudio</button>
+
+    <div id="progressBox" class="progress-box">
+        <div id="progressText" style="font-size: 13px;">Processando notas...</div>
+        <div class="progress-bar"><div id="progressFill" class="progress-fill"></div></div>
+    </div>
+
+    <button id="downloadBtn" class="btn-download">⬇️ Baixar Música com Piano</button>
     
-    <div id="statusText" class="status">Pronto para iniciar.</div>
+    <div id="statusText" class="status">Aguardando arquivo de áudio.</div>
 </div>
 
 <script>
-    const toggleBtn = document.getElementById('toggleBtn');
+    const audioFileInput = document.getElementById('audioFile');
+    const fileLabel = document.getElementById('fileLabel');
+    const harmonyModeSelect = document.getElementById('harmonyMode');
+    const processBtn = document.getElementById('processBtn');
     const downloadBtn = document.getElementById('downloadBtn');
-    const noteNameEl = document.getElementById('noteName');
-    const freqDisplayEl = document.getElementById('freqDisplay');
-    const statusTextEl = document.getElementById('statusText');
+    const progressBox = document.getElementById('progressBox');
+    const progressFill = document.getElementById('progressFill');
+    const progressText = document.getElementById('progressText');
+    const statusText = document.getElementById('statusText');
 
-    let audioCtx = null;
-    let analyser = null;
-    let microphone = null;
-    let isRunning = false;
-    let animationId = null;
+    let selectedFile = null;
+    let renderedBlob = null;
 
-    // Sintetizador do Piano
-    let oscillator = null;
-    let gainNode = null;
-
-    // Gravação e Mixagem
-    let mediaRecorder = null;
-    let audioChunks = [];
-    let audioBlob = null;
-    let masterDestination = null;
-
-    const noteNames = ["Dó", "Dó#", "Ré", "Ré#", "Mi", "Fá", "Fá#", "Sol", "Sol#", "Lá", "Lá#", "Si"];
-
-    function initAudio() {
-        if (!audioCtx) {
-            audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-        }
-        if (audioCtx.state === 'suspended') {
-            audioCtx.resume();
-        }
-    }
-
-    function createPianoSound() {
-        oscillator = audioCtx.createOscillator();
-        gainNode = audioCtx.createGain();
-
-        oscillator.type = 'triangle';
-        gainNode.gain.setValueAtTime(0, audioCtx.currentTime);
-
-        // Conecta o piano na saída de áudio e no gravador
-        oscillator.connect(gainNode);
-        gainNode.connect(audioCtx.destination);
-        if (masterDestination) gainNode.connect(masterDestination);
-
-        oscillator.start();
-    }
-
-    toggleBtn.addEventListener('click', async () => {
-        if (!isRunning) {
-            try {
-                initAudio();
-                downloadBtn.style.display = "none";
-                audioChunks = [];
-                
-                const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
-                microphone = audioCtx.createMediaStreamSource(stream);
-                analyser = audioCtx.createAnalyser();
-                analyser.fftSize = 2048;
-                
-                microphone.connect(analyser);
-
-                // Nó de destino para gravar a voz + piano juntos
-                masterDestination = audioCtx.createMediaStreamDestination();
-                microphone.connect(masterDestination);
-
-                createPianoSound();
-
-                // Inicializa o Gravador do Navegador
-                let mimeType = MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm' : 'audio/mp4';
-                mediaRecorder = new MediaRecorder(masterDestination.stream, { mimeType });
-
-                mediaRecorder.ondataavailable = event => {
-                    if (event.data.size > 0) audioChunks.push(event.data);
-                };
-
-                mediaRecorder.onstop = () => {
-                    audioBlob = new Blob(audioChunks, { type: mimeType });
-                    downloadBtn.style.display = "block";
-                    statusTextEl.innerText = "Gravação concluída! Clique abaixo para baixar.";
-                };
-
-                mediaRecorder.start();
-
-                isRunning = true;
-                toggleBtn.innerText = "⏹️ Parar e Gerar Áudio";
-                toggleBtn.className = "btn-stop";
-                statusTextEl.innerText = "Gravando voz e piano...";
-
-                detectPitch();
-            } catch (err) {
-                alert("Permissão do microfone negada ou erro ao iniciar áudio.");
-                console.error(err);
-            }
-        } else {
-            stopAudio();
+    audioFileInput.addEventListener('change', (e) => {
+        if (e.target.files.length > 0) {
+            selectedFile = e.target.files[0];
+            fileLabel.innerText = `📄 ${selectedFile.name}`;
+            processBtn.disabled = false;
+            statusText.innerText = "Pronto para processar.";
+            downloadBtn.style.display = "none";
         }
     });
 
-    function stopAudio() {
-        isRunning = false;
-        if (animationId) cancelAnimationFrame(animationId);
+    processBtn.addEventListener('click', async () => {
+        if (!selectedFile) return;
+
+        processBtn.disabled = true;
+        downloadBtn.style.display = "none";
+        progressBox.style.display = "block";
+        statusText.innerText = "Lendo e decodificando áudio...";
+
+        try {
+            const arrayBuffer = await selectedFile.arrayBuffer();
+            const tempCtx = new (window.AudioContext || window.webkitAudioContext)();
+            const audioBuffer = await tempCtx.decodeAudioData(arrayBuffer);
+            
+            statusText.innerText = "Gerando acompanhamento de piano...";
+
+            // Processa o áudio offline em alta velocidade
+            const offlineCtx = new OfflineAudioContext(
+                audioBuffer.numberOfChannels,
+                audioBuffer.length,
+                audioBuffer.sampleRate
+            );
+
+            // 1. Canal da Música Original
+            const originalSource = offlineCtx.createBufferSource();
+            originalSource.buffer = audioBuffer;
+            originalSource.connect(offlineCtx.destination);
+
+            // 2. Análise de Frequência para gerar o piano
+            const pcmData = audioBuffer.getChannelData(0);
+            const sampleRate = audioBuffer.sampleRate;
+            const mode = harmonyModeSelect.value;
+            
+            // Intervalos de tempo para checagem de notas (a cada 100ms)
+            const frameSize = Math.floor(sampleRate * 0.1); 
+            const totalFrames = Math.floor(pcmData.length / frameSize);
+
+            for (let i = 0; i < totalFrames; i++) {
+                const start = i * frameSize;
+                const bufferSegment = pcmData.subarray(start, start + frameSize);
+                const pitch = autoCorrelate(bufferSegment, sampleRate);
+                const time = start / sampleRate;
+
+                if (pitch > 65 && pitch < 1000) {
+                    const midiNote = Math.round(69 + 12 * Math.log2(pitch / 440));
+                    
+                    if (mode === 'chord') {
+                        // Toca o Acorde Maior (Fundamental, Terça Maior +4, Quinta justa +7)
+                        playPianoNote(offlineCtx, midiNote - 12, time, 0.25); // Tom mais grave para encorpar
+                        playPianoNote(offlineCtx, midiNote - 8, time, 0.2);
+                        playPianoNote(offlineCtx, midiNote - 5, time, 0.2);
+                    } else {
+                        // Toca a Melodia exata afinada
+                        playPianoNote(offlineCtx, midiNote, time, 0.25);
+                    }
+                }
+
+                // Atualiza progresso visual
+                if (i % 20 === 0) {
+                    const percent = Math.floor((i / totalFrames) * 100);
+                    progressFill.style.width = percent + '%';
+                    progressText.innerText = `Criando piano: ${percent}%`;
+                }
+            }
+
+            originalSource.start(0);
+
+            // Renderiza o áudio final mixado
+            const renderedBuffer = await offlineCtx.startRendering();
+            renderedBlob = bufferToWave(renderedBuffer, renderedBuffer.length);
+
+            progressFill.style.width = '100%';
+            progressText.innerText = 'Concluído com sucesso!';
+            statusText.innerText = 'Processamento finalizado!';
+            downloadBtn.style.display = "block";
+            processBtn.disabled = false;
+
+        } catch (err) {
+            console.error(err);
+            alert("Erro ao processar o arquivo de áudio. Certifique-se de ser um arquivo de som válido.");
+            statusText.innerText = "Erro no processamento.";
+            processBtn.disabled = false;
+        }
+    });
+
+    // Toca uma nota com timbre simulado de piano
+    function playPianoNote(ctx, midiNote, startTime, duration) {
+        const freq = 440 * Math.pow(2, (midiNote - 69) / 12);
         
-        if (mediaRecorder && mediaRecorder.state !== 'inactive') {
-            mediaRecorder.stop();
-        }
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
 
-        if (oscillator) {
-            oscillator.stop();
-            oscillator.disconnect();
-        }
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(freq, startTime);
 
-        if (microphone && microphone.mediaStream) {
-            microphone.mediaStream.getTracks().forEach(track => track.stop());
-        }
+        // Envelope de Piano: Ataque rápido e Decaimento suave
+        gain.gain.setValueAtTime(0, startTime);
+        gain.gain.linearRampToValueAtTime(0.2, startTime + 0.02);
+        gain.gain.exponentialRampToValueAtTime(0.001, startTime + duration);
 
-        toggleBtn.innerText = "🎙️ Iniciar Nova Gravação";
-        toggleBtn.className = "btn-start";
-        noteNameEl.innerText = "--";
-        freqDisplayEl.innerText = "0.0 Hz";
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+
+        osc.start(startTime);
+        osc.stop(startTime + duration);
     }
 
+    // Download do arquivo gerado
     downloadBtn.addEventListener('click', () => {
-        if (!audioBlob) return;
+        if (!renderedBlob) return;
         
-        const url = URL.createObjectURL(audioBlob);
+        const url = URL.createObjectURL(renderedBlob);
         const a = document.createElement('a');
         a.style.display = 'none';
         a.href = url;
-        
-        // Formato compatível com iOS e Android
-        const ext = audioBlob.type.includes('webm') ? 'webm' : 'm4a';
-        a.download = `meu-acompanhamento.${ext}`;
+        a.download = `musica-com-piano-acompanhante.wav`;
         
         document.body.appendChild(a);
         a.click();
@@ -187,33 +211,7 @@
         }, 100);
     });
 
-    function detectPitch() {
-        const buffer = new Float32Array(analyser.fftSize);
-        analyser.getFloatTimeDomainData(buffer);
-
-        const pitch = autoCorrelate(buffer, audioCtx.sampleRate);
-
-        if (pitch !== -1 && pitch >= 65 && pitch <= 1000) {
-            const midiNote = Math.round(69 + 12 * Math.log2(pitch / 440));
-            const noteIndex = (midiNote % 12 + 12) % 12;
-            const octave = Math.floor(midiNote / 12) - 1;
-
-            noteNameEl.innerText = `${noteNames[noteIndex]}${octave}`;
-            freqDisplayEl.innerText = `${pitch.toFixed(1)} Hz`;
-
-            oscillator.frequency.setTargetAtTime(pitch, audioCtx.currentTime, 0.03);
-            gainNode.gain.setTargetAtTime(0.25, audioCtx.currentTime, 0.05);
-        } else {
-            if (gainNode) {
-                gainNode.gain.setTargetAtTime(0, audioCtx.currentTime, 0.1);
-            }
-        }
-
-        if (isRunning) {
-            animationId = requestAnimationFrame(detectPitch);
-        }
-    }
-
+    // Algoritmo de Detecção de Tom
     function autoCorrelate(buf, sampleRate) {
         let SIZE = buf.length;
         let rms = 0;
@@ -224,7 +222,7 @@
         }
         rms = Math.sqrt(rms / SIZE);
 
-        if (rms < 0.015) return -1;
+        if (rms < 0.02) return -1; // Despreza silêncios ou ruídos fracos
 
         let r1 = 0, r2 = SIZE - 1, thres = 0.2;
         for (let i = 0; i < SIZE / 2; i++) if (Math.abs(buf[i]) < thres) { r1 = i; break; }
@@ -246,6 +244,46 @@
         let T0 = maxpos;
 
         return sampleRate / T0;
+    }
+
+    // Função auxiliar para converter o áudio da memória em arquivo WAV baixável
+    function bufferToWave(abuffer, len) {
+        let numOfChan = abuffer.numberOfChannels,
+            length = len * numOfChan * 2 + 44,
+            out = new DataView(new ArrayBuffer(length)),
+            channels = [], i, sample,
+            offset = 0,
+            pos = 0;
+
+        function setUint16(data) { out.setUint16(pos, data, true); pos += 2; }
+        function setUint32(data) { out.setUint32(pos, data, true); pos += 4; }
+
+        setUint32(0x46464952);                         // "RIFF"
+        setUint32(length - 8);                         // file length - 8
+        setUint32(0x45564157);                         // "WAVE"
+        setUint32(0x20746d66);                         // "fmt " chunk
+        setUint32(16);                                 // length = 16
+        setUint16(1);                                  // PCM (uncompressed)
+        setUint16(numOfChan);
+        setUint32(abuffer.sampleRate);
+        setUint32(abuffer.sampleRate * 2 * numOfChan); // avg. bytes/sec
+        setUint16(numOfChan * 2);                      // block-align
+        setUint16(16);                                 // 16-bit
+        setUint32(0x61746164);                         // "data" chunk
+        setUint32(length - pos - 4);                   // chunk length
+
+        for (i = 0; i < abuffer.numberOfChannels; i++) channels.push(abuffer.getChannelData(i));
+
+        while (pos < length) {
+            for (i = 0; i < numOfChan; i++) {
+                sample = Math.max(-1, Math.min(1, channels[i][offset]));
+                sample = (0.5 + sample < 0 ? sample * 32768 : sample * 32767) | 0;
+                out.setInt16(pos, sample, true);
+                pos += 2;
+            }
+            offset++;
+        }
+        return new Blob([out], { type: "audio/wav" });
     }
 </script>
 
