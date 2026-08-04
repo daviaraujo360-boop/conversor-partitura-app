@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Acompanhamento de Piano por Áudio</title>
+    <title>Harmonizador de Piano Universal</title>
     <style>
         * { box-sizing: border-box; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
         body { background: #1c1c1e; color: #ffffff; margin: 0; padding: 20px; display: flex; justify-content: center; align-items: center; min-height: 100vh; }
@@ -13,7 +13,7 @@
         
         .upload-area { border: 2px dashed #0a84ff; border-radius: 16px; padding: 25px 15px; margin-bottom: 20px; background: #1c1c1e; cursor: pointer; }
         .upload-area input { display: none; }
-        .upload-label { font-size: 15px; color: #0a84ff; font-weight: bold; cursor: pointer; }
+        .upload-label { font-size: 15px; color: #0a84ff; font-weight: bold; cursor: pointer; word-break: break-all; }
         
         .mode-select { margin-bottom: 20px; text-align: left; }
         .mode-select label { font-size: 13px; color: #8e8e93; display: block; margin-bottom: 6px; }
@@ -28,18 +28,20 @@
         .btn-process:disabled { background: #3a3a3c; color: #8e8e93; cursor: not-allowed; }
         .btn-download { background: #0a84ff; color: #ffffff; display: none; }
         
-        .status { font-size: 13px; color: #8e8e93; }
+        .status { font-size: 13px; color: #8e8e93; min-height: 18px; }
+        .error-msg { color: #ff453a; font-weight: bold; }
     </style>
 </head>
 <body>
 
 <div class="card">
-    <h1>🎹 Harmonizador de Piano</h1>
-    <p>Envie sua música/voz gravada para gerar o acompanhamento de piano e baixar o resultado.</p>
+    <h1>🎹 Harmonizador Universal</h1>
+    <p>Envie qualquer áudio (MP3, M4A, WAV, OGG, AAC) para gerar o acompanhamento de piano.</p>
 
     <div class="upload-area" onclick="document.getElementById('audioFile').click()">
-        <input type="file" id="audioFile" accept="audio/*">
-        <div id="fileLabel" class="upload-label">📁 Clique para selecionar o áudio</div>
+        <!-- Aceita qualquer tipo de áudio sem restrição -->
+        <input type="file" id="audioFile" accept="audio/*, .mp3, .m4a, .wav, .aac, .ogg, .caf, .flac">
+        <div id="fileLabel" class="upload-label">📁 Clique para escolher o áudio</div>
     </div>
 
     <div class="mode-select">
@@ -53,7 +55,7 @@
     <button id="processBtn" class="btn-process" disabled>▶️ Processar Áudio</button>
 
     <div id="progressBox" class="progress-box">
-        <div id="progressText" style="font-size: 13px;">Processando notas...</div>
+        <div id="progressText" style="font-size: 13px;">Lendo arquivo...</div>
         <div class="progress-bar"><div id="progressFill" class="progress-fill"></div></div>
     </div>
 
@@ -81,10 +83,23 @@
             selectedFile = e.target.files[0];
             fileLabel.innerText = `📄 ${selectedFile.name}`;
             processBtn.disabled = false;
-            statusText.innerText = "Pronto para processar.";
+            statusText.className = "status";
+            statusText.innerText = "Arquivo selecionado com sucesso!";
             downloadBtn.style.display = "none";
         }
     });
+
+    // Função de decodificação compatível com Safari/iOS/Android
+    async function decodeAudioDataCompatible(arrayBuffer) {
+        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        return new Promise((resolve, reject) => {
+            audioCtx.decodeAudioData(
+                arrayBuffer,
+                (buffer) => resolve(buffer),
+                (err) => reject(err)
+            );
+        });
+    }
 
     processBtn.addEventListener('click', async () => {
         if (!selectedFile) return;
@@ -92,16 +107,21 @@
         processBtn.disabled = true;
         downloadBtn.style.display = "none";
         progressBox.style.display = "block";
+        statusText.className = "status";
         statusText.innerText = "Lendo e decodificando áudio...";
+        progressFill.style.width = '10%';
 
         try {
             const arrayBuffer = await selectedFile.arrayBuffer();
-            const tempCtx = new (window.AudioContext || window.webkitAudioContext)();
-            const audioBuffer = await tempCtx.decodeAudioData(arrayBuffer);
+            progressFill.style.width = '25%';
+            
+            // Decodifica o áudio usando o método compatível com iOS/Android
+            const audioBuffer = await decodeAudioDataCompatible(arrayBuffer);
             
             statusText.innerText = "Gerando acompanhamento de piano...";
+            progressFill.style.width = '40%';
 
-            // Processa o áudio offline em alta velocidade
+            // Contexto offline para processamento rápido
             const offlineCtx = new OfflineAudioContext(
                 audioBuffer.numberOfChannels,
                 audioBuffer.length,
@@ -118,7 +138,6 @@
             const sampleRate = audioBuffer.sampleRate;
             const mode = harmonyModeSelect.value;
             
-            // Intervalos de tempo para checagem de notas (a cada 100ms)
             const frameSize = Math.floor(sampleRate * 0.1); 
             const totalFrames = Math.floor(pcmData.length / frameSize);
 
@@ -132,45 +151,44 @@
                     const midiNote = Math.round(69 + 12 * Math.log2(pitch / 440));
                     
                     if (mode === 'chord') {
-                        // Toca o Acorde Maior (Fundamental, Terça Maior +4, Quinta justa +7)
-                        playPianoNote(offlineCtx, midiNote - 12, time, 0.25); // Tom mais grave para encorpar
+                        playPianoNote(offlineCtx, midiNote - 12, time, 0.25);
                         playPianoNote(offlineCtx, midiNote - 8, time, 0.2);
                         playPianoNote(offlineCtx, midiNote - 5, time, 0.2);
                     } else {
-                        // Toca a Melodia exata afinada
                         playPianoNote(offlineCtx, midiNote, time, 0.25);
                     }
                 }
 
-                // Atualiza progresso visual
                 if (i % 20 === 0) {
-                    const percent = Math.floor((i / totalFrames) * 100);
+                    const percent = 40 + Math.floor((i / totalFrames) * 50);
                     progressFill.style.width = percent + '%';
-                    progressText.innerText = `Criando piano: ${percent}%`;
+                    progressText.innerText = `Analisando notas: ${percent}%`;
                 }
             }
 
             originalSource.start(0);
 
-            // Renderiza o áudio final mixado
+            progressText.innerText = "Renderizando som final...";
+            progressFill.style.width = '95%';
+
             const renderedBuffer = await offlineCtx.startRendering();
             renderedBlob = bufferToWave(renderedBuffer, renderedBuffer.length);
 
             progressFill.style.width = '100%';
             progressText.innerText = 'Concluído com sucesso!';
-            statusText.innerText = 'Processamento finalizado!';
+            statusText.innerText = 'Áudio pronto para download!';
             downloadBtn.style.display = "block";
             processBtn.disabled = false;
 
         } catch (err) {
-            console.error(err);
-            alert("Erro ao processar o arquivo de áudio. Certifique-se de ser um arquivo de som válido.");
-            statusText.innerText = "Erro no processamento.";
+            console.error("Erro na decodificação:", err);
+            progressBox.style.display = "none";
+            statusText.className = "status error-msg";
+            statusText.innerText = "Não foi possível ler este áudio. Tente convertê-lo para MP3/WAV ou gravar direto pelo app.";
             processBtn.disabled = false;
         }
     });
 
-    // Toca uma nota com timbre simulado de piano
     function playPianoNote(ctx, midiNote, startTime, duration) {
         const freq = 440 * Math.pow(2, (midiNote - 69) / 12);
         
@@ -180,7 +198,6 @@
         osc.type = 'triangle';
         osc.frequency.setValueAtTime(freq, startTime);
 
-        // Envelope de Piano: Ataque rápido e Decaimento suave
         gain.gain.setValueAtTime(0, startTime);
         gain.gain.linearRampToValueAtTime(0.2, startTime + 0.02);
         gain.gain.exponentialRampToValueAtTime(0.001, startTime + duration);
@@ -192,7 +209,6 @@
         osc.stop(startTime + duration);
     }
 
-    // Download do arquivo gerado
     downloadBtn.addEventListener('click', () => {
         if (!renderedBlob) return;
         
@@ -211,7 +227,6 @@
         }, 100);
     });
 
-    // Algoritmo de Detecção de Tom
     function autoCorrelate(buf, sampleRate) {
         let SIZE = buf.length;
         let rms = 0;
@@ -222,7 +237,7 @@
         }
         rms = Math.sqrt(rms / SIZE);
 
-        if (rms < 0.02) return -1; // Despreza silêncios ou ruídos fracos
+        if (rms < 0.02) return -1;
 
         let r1 = 0, r2 = SIZE - 1, thres = 0.2;
         for (let i = 0; i < SIZE / 2; i++) if (Math.abs(buf[i]) < thres) { r1 = i; break; }
@@ -246,7 +261,6 @@
         return sampleRate / T0;
     }
 
-    // Função auxiliar para converter o áudio da memória em arquivo WAV baixável
     function bufferToWave(abuffer, len) {
         let numOfChan = abuffer.numberOfChannels,
             length = len * numOfChan * 2 + 44,
@@ -259,18 +273,18 @@
         function setUint32(data) { out.setUint32(pos, data, true); pos += 4; }
 
         setUint32(0x46464952);                         // "RIFF"
-        setUint32(length - 8);                         // file length - 8
+        setUint32(length - 8);                         
         setUint32(0x45564157);                         // "WAVE"
-        setUint32(0x20746d66);                         // "fmt " chunk
-        setUint32(16);                                 // length = 16
-        setUint16(1);                                  // PCM (uncompressed)
+        setUint32(0x20746d66);                         // "fmt "
+        setUint32(16);                                 
+        setUint16(1);                                  // PCM
         setUint16(numOfChan);
         setUint32(abuffer.sampleRate);
-        setUint32(abuffer.sampleRate * 2 * numOfChan); // avg. bytes/sec
-        setUint16(numOfChan * 2);                      // block-align
-        setUint16(16);                                 // 16-bit
-        setUint32(0x61746164);                         // "data" chunk
-        setUint32(length - pos - 4);                   // chunk length
+        setUint32(abuffer.sampleRate * 2 * numOfChan); 
+        setUint16(numOfChan * 2);                      
+        setUint16(16);                                 
+        setUint32(0x61746164);                         // "data"
+        setUint32(length - pos - 4);                   
 
         for (i = 0; i < abuffer.numberOfChannels; i++) channels.push(abuffer.getChannelData(i));
 
