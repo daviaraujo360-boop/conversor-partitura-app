@@ -21,22 +21,23 @@
         .upload-btn {
             display: block;
             text-align: center;
-            background: #eef6ff;
-            color: #007aff;
-            border: 2px dashed #007aff;
+            background: #007aff;
+            color: #ffffff;
             padding: 16px;
             border-radius: 12px;
             font-weight: 600;
-            font-size: 15px;
+            font-size: 16px;
             cursor: pointer;
             margin-bottom: 10px;
+            box-shadow: 0 2px 8px rgba(0,122,255,0.25);
         }
 
+        /* Libera todos os tipos de arquivo para o iOS não bloquear */
         input[type="file"] { display: none; }
 
-        button { width: 100%; padding: 14px; margin-top: 5px; border-radius: 10px; border: none; font-size: 16px; background: #007aff; color: white; font-weight: 600; cursor: pointer; }
+        button { width: 100%; padding: 14px; margin-top: 10px; border-radius: 10px; border: none; font-size: 16px; background: #34c759; color: white; font-weight: 600; cursor: pointer; }
         button:disabled { background: #d1d1d6; color: #8e8e93; }
-        #statusMsg { font-size: 13px; font-weight: 600; color: #007aff; margin-top: 10px; text-align: center; display: none; }
+        #statusMsg { font-size: 13px; font-weight: 600; color: #007aff; margin-top: 12px; text-align: center; display: none; word-break: break-word; }
         #paper { background: #fff; border: 1px solid #e5e5ea; border-radius: 10px; margin-top: 10px; display: flex; justify-content: center; overflow-x: auto; min-height: 140px; }
         audio { width: 100%; margin-top: 10px; }
     </style>
@@ -49,14 +50,15 @@
     <div class="box">
         <label>1. Carregar Áudio</label>
         
+        <!-- Botão com suporte universal para o iOS -->
         <label for="audioInput" class="upload-btn" id="uploadLabel">
-            📁 Toque aqui para escolher o Áudio ou Gravação
+            📁 Escolher Arquivo no iPhone
         </label>
-        <input type="file" id="audioInput" accept="audio/*">
+        <input type="file" id="audioInput">
 
         <audio id="audioPlayer" controls style="display:none;"></audio>
-        <button id="processAudioBtn" disabled>⚡ Processar no Celular</button>
-        <div id="statusMsg">Analisando no processador do celular...</div>
+        <button id="processAudioBtn" disabled>⚡ Processar Áudio</button>
+        <div id="statusMsg"></div>
     </div>
 
     <div class="box">
@@ -73,41 +75,70 @@
     const paper = document.getElementById('paper');
     const uploadLabel = document.getElementById('uploadLabel');
 
-    let audioBuffer = null;
-
-    async function loadAudioFile(file) {
-        if (!file) return;
-        
-        uploadLabel.innerText = `🎵 Arquivo: ${file.name || 'Áudio Selecionado'}`;
-        audioPlayer.style.display = 'block';
-        audioPlayer.src = URL.createObjectURL(file);
-
-        const arrayBuffer = await file.arrayBuffer();
-        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-        audioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
-        processAudioBtn.disabled = false;
-        
-        statusMsg.style.display = 'block';
-        statusMsg.innerText = "Áudio pronto para processar!";
-    }
+    let selectedFile = null;
+    let audioCtx = null;
 
     audioInput.addEventListener('change', (e) => {
-        if (e.target.files[0]) loadAudioFile(e.target.files[0]);
+        const file = e.target.files[0];
+        if (file) {
+            selectedFile = file;
+            uploadLabel.innerText = `✅ ${file.name.substring(0, 25)}...`;
+            
+            // Carrega o tocador nativo
+            const blobUrl = URL.createObjectURL(file);
+            audioPlayer.src = blobUrl;
+            audioPlayer.style.display = 'block';
+            
+            processAudioBtn.disabled = false;
+            statusMsg.style.display = 'block';
+            statusMsg.style.color = '#34c759';
+            statusMsg.innerText = "Áudio carregado com sucesso! Clique em Processar.";
+        } else {
+            statusMsg.style.display = 'block';
+            statusMsg.style.color = '#ff3b30';
+            statusMsg.innerText = "Nenhum arquivo foi selecionado.";
+        }
     });
 
     processAudioBtn.addEventListener('click', async () => {
-        if (!audioBuffer) return;
+        if (!selectedFile) return;
 
         processAudioBtn.disabled = true;
         statusMsg.style.display = 'block';
-        statusMsg.innerText = "Analisando notas no iPhone...";
+        statusMsg.style.color = '#007aff';
+        statusMsg.innerText = "Lendo arquivo de áudio...";
 
-        setTimeout(() => {
-            const notes = detectNotesLocal(audioBuffer);
-            renderScore(notes);
-            statusMsg.innerText = "Concluído!";
+        try {
+            if (!audioCtx) {
+                audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            }
+            if (audioCtx.state === 'suspended') {
+                await audioCtx.resume();
+            }
+
+            const arrayBuffer = await selectedFile.arrayBuffer();
+            
+            statusMsg.innerText = "Decodificando frequências no iPhone...";
+
+            audioCtx.decodeAudioData(arrayBuffer, (buffer) => {
+                const notes = detectNotesLocal(buffer);
+                renderScore(notes);
+                statusMsg.style.color = '#34c759';
+                statusMsg.innerText = "Partitura gerada com sucesso!";
+                processAudioBtn.disabled = false;
+            }, (err) => {
+                console.error(err);
+                statusMsg.style.color = '#ff3b30';
+                statusMsg.innerText = "Formato de áudio incompatível. Tente um arquivo .mp3 ou .wav.";
+                processAudioBtn.disabled = false;
+            });
+
+        } catch (err) {
+            console.error(err);
+            statusMsg.style.color = '#ff3b30';
+            statusMsg.innerText = "Erro ao acessar o arquivo selecionado.";
             processAudioBtn.disabled = false;
-        }, 150);
+        }
     });
 
     function detectNotesLocal(buffer) {
